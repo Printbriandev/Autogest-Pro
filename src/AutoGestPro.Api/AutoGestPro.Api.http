@@ -1,0 +1,31 @@
+@AutoGestPro.Api_HostAddress = https://localhost:5001
+
+GET {{AutoGestPro.Api_HostAddress}}/health
+Accept: application/json
+
+###
+
+GET {{AutoGestPro.Api_HostAddress}}/api/reportes/dashboard
+Accept: application/json
+
+###
+
+GET {{AutoGestPro.Api_HostAddress}}/api/clientes?page=1&pageSize=10
+Accept: application/json
+
+###
+
+POST {{AutoGestPro.Api_HostAddress}}/api/clientes
+Content-Type: application/json
+
+{
+  "idTipoCliente": 1,
+  "nombres": "Maria",
+  "apellidos": "Perez",
+  "razonSocial": null,
+  "tipoDocumento": "CED",
+  "numeroDocumento": "00100000001",
+  "telefono": "8090000000",
+  "telefonoAlternativo": null,
+  "correoElectronico": "maria@example.com"
+}
