@@ -31,15 +31,22 @@ builder.Services.AddScoped<IAuthTokenService, AuthTokenService>();
 
 var app = builder.Build();
 
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseSwagger();
-app.UseSwaggerUI();
+app.UseSwaggerUI(options =>
+{
+    options.RoutePrefix = "swagger";
+});
 
 if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
 app.UseCors("web");
-app.MapGet("/", () => Results.Redirect("/swagger"));
+app.MapGet("/", () => Results.File(
+    Path.Combine(app.Environment.WebRootPath ?? string.Empty, "index.html"),
+    "text/html"));
 app.MapHealthChecks("/health");
 app.MapControllers();
 
