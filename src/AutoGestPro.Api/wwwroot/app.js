@@ -14,11 +14,7 @@ const els = {
   clientsBody: document.querySelector("#clientsBody"),
   emptyState: document.querySelector("#emptyState"),
   searchInput: document.querySelector("#searchInput"),
-  refreshButton: document.querySelector("#refreshButton"),
   newClientButton: document.querySelector("#newClientButton"),
-  metricTotal: document.querySelector("#metricTotal"),
-  metricActive: document.querySelector("#metricActive"),
-  metricInactive: document.querySelector("#metricInactive"),
   pageInfo: document.querySelector("#pageInfo"),
   prevPageButton: document.querySelector("#prevPageButton"),
   nextPageButton: document.querySelector("#nextPageButton"),
@@ -49,6 +45,7 @@ const els = {
 
 const icons = {
   edit: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>`,
+  view: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"></path><circle cx="12" cy="12" r="3"></circle></svg>`,
   trash: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg>`,
   undo: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10a6 6 0 0 1 0 12h-2"></path></svg>`,
 };
@@ -150,12 +147,6 @@ async function loadClients() {
 }
 
 function renderClients() {
-  const activeCount = state.clients.filter((client) => client.activo).length;
-  const inactiveCount = state.clients.length - activeCount;
-
-  els.metricTotal.textContent = state.totalItems;
-  els.metricActive.textContent = activeCount;
-  els.metricInactive.textContent = inactiveCount;
   els.pageInfo.textContent = `Pagina ${state.page} de ${state.totalPages}`;
   els.prevPageButton.disabled = state.page <= 1;
   els.nextPageButton.disabled = state.page >= state.totalPages;
@@ -172,26 +163,13 @@ function renderClientRow(client) {
 
   return `
     <tr>
-      <td>
-        <div class="client-name">
-          <strong>${escapeHtml(client.nombreCompleto)}</strong>
-          <span>ID ${escapeHtml(client.idCliente)}</span>
-        </div>
-      </td>
-      <td>
-        <strong>${escapeHtml(client.tipoDocumento)}</strong>
-        <div class="muted-text">${escapeHtml(client.numeroDocumento)}</div>
-      </td>
+      <td>${escapeHtml(client.nombreCompleto)}</td>
       <td>${escapeHtml(client.telefono)}</td>
       <td>${escapeHtml(email)}</td>
       <td>
-        <span class="status-pill ${client.activo ? "active" : "inactive"}">
-          ${client.activo ? "Activo" : "Inactivo"}
-        </span>
-      </td>
-      <td>
         <div class="row-actions">
           <button class="row-action" type="button" data-action="edit" data-id="${client.idCliente}" aria-label="Editar cliente">${icons.edit}</button>
+          <button class="row-action view" type="button" data-action="view" data-id="${client.idCliente}" aria-label="Ver cliente">${icons.view}</button>
           ${actionButton}
         </div>
       </td>
@@ -200,21 +178,25 @@ function renderClientRow(client) {
 }
 
 function setBusy(isBusy) {
-  els.refreshButton.disabled = isBusy;
   els.saveButton.disabled = isBusy;
 }
 
 function openDrawer(mode, client = null) {
   state.editing = client;
   els.clientForm.reset();
-  els.drawerMode.textContent = mode === "edit" ? "Edicion" : "Registro";
-  els.drawerTitle.textContent = mode === "edit" ? "Editar cliente" : "Nuevo cliente";
-  els.fields.activeField.hidden = mode !== "edit";
-  els.fields.idTipoCliente.disabled = mode === "edit";
-  els.fields.tipoDocumento.disabled = mode === "edit";
-  els.fields.numeroDocumento.disabled = mode === "edit";
+  const isView = mode === "view";
+  const isEdit = mode === "edit" || isView;
+  els.drawerMode.textContent = isView ? "Consulta" : mode === "edit" ? "Edicion" : "Registro";
+  els.drawerTitle.textContent = isView ? "Detalle del cliente" : mode === "edit" ? "Editar cliente" : "Nuevo cliente";
+  els.fields.activeField.hidden = !isEdit;
+  els.fields.idTipoCliente.disabled = isEdit;
+  els.fields.tipoDocumento.disabled = isEdit;
+  els.fields.numeroDocumento.disabled = isEdit;
+  els.saveButton.hidden = isView;
 
-  if (mode === "edit" && client) {
+  setFormReadOnly(isView);
+
+  if (isEdit && client) {
     fillForm(client);
   } else {
     els.fields.clientId.value = "";
@@ -232,6 +214,22 @@ function closeDrawer() {
   els.drawer.setAttribute("aria-hidden", "true");
   els.drawerBackdrop.hidden = true;
   state.editing = null;
+  setFormReadOnly(false);
+  els.saveButton.hidden = false;
+}
+
+function setFormReadOnly(isReadOnly) {
+  [
+    els.fields.nombres,
+    els.fields.apellidos,
+    els.fields.razonSocial,
+    els.fields.telefono,
+    els.fields.telefonoAlternativo,
+    els.fields.correoElectronico,
+    els.fields.activo,
+  ].forEach((field) => {
+    field.disabled = isReadOnly;
+  });
 }
 
 function fillForm(client) {
@@ -321,6 +319,18 @@ async function editClient(id) {
   }
 }
 
+async function viewClient(id) {
+  setBusy(true);
+  try {
+    const client = await api(`/api/clientes/${id}`);
+    openDrawer("view", client);
+  } catch (error) {
+    showToast(error.message || "No se pudo abrir el cliente.", "error");
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function deactivateClient(id) {
   const client = state.clients.find((item) => item.idCliente === id);
   const name = client?.nombreCompleto ?? `ID ${id}`;
@@ -380,7 +390,6 @@ els.closeDrawerButton.addEventListener("click", closeDrawer);
 els.cancelButton.addEventListener("click", closeDrawer);
 els.drawerBackdrop.addEventListener("click", closeDrawer);
 els.clientForm.addEventListener("submit", saveClient);
-els.refreshButton.addEventListener("click", loadClients);
 
 els.searchInput.addEventListener("input", debounce((event) => {
   state.search = event.target.value.trim();
@@ -413,6 +422,10 @@ els.clientsBody.addEventListener("click", (event) => {
 
   if (action === "edit") {
     editClient(id);
+  }
+
+  if (action === "view") {
+    viewClient(id);
   }
 
   if (action === "deactivate") {
