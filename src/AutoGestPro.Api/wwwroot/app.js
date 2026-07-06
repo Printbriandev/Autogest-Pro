@@ -1,4 +1,9 @@
+const SESSION_KEY = "autogest.session";
+const REMEMBER_KEY = "autogest.rememberedUser";
+
 const state = {
+  session: readSession(),
+  currentRoute: "dashboard",
   page: 1,
   pageSize: 10,
   search: "",
@@ -6,11 +11,30 @@ const state = {
   totalPages: 1,
   clients: [],
   tiposCliente: [],
+  clientsLoaded: false,
+  dashboardLoaded: false,
   editing: null,
   toastTimer: null,
 };
 
 const els = {
+  loginView: document.querySelector("#loginView"),
+  appView: document.querySelector("#appView"),
+  loginForm: document.querySelector("#loginForm"),
+  nombreUsuario: document.querySelector("#nombreUsuario"),
+  password: document.querySelector("#password"),
+  rememberMe: document.querySelector("#rememberMe"),
+  togglePasswordButton: document.querySelector("#togglePasswordButton"),
+  loginButton: document.querySelector("#loginButton"),
+  loginError: document.querySelector("#loginError"),
+  navButtons: document.querySelectorAll("[data-route]"),
+  logoutButton: document.querySelector("#logoutButton"),
+  userName: document.querySelector("#userName"),
+  userRole: document.querySelector("#userRole"),
+  dashboardSection: document.querySelector("#dashboardSection"),
+  dashboardGrid: document.querySelector("#dashboardGrid"),
+  dashboardRefreshButton: document.querySelector("#dashboardRefreshButton"),
+  clientsSection: document.querySelector("#clientsSection"),
   clientsBody: document.querySelector("#clientsBody"),
   emptyState: document.querySelector("#emptyState"),
   searchInput: document.querySelector("#searchInput"),
@@ -50,6 +74,28 @@ const icons = {
   undo: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10a6 6 0 0 1 0 12h-2"></path></svg>`,
 };
 
+function readSession() {
+  try {
+    return JSON.parse(window.localStorage.getItem(SESSION_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function saveSession(session) {
+  state.session = session;
+  window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+function clearSession() {
+  state.session = null;
+  window.localStorage.removeItem(SESSION_KEY);
+}
+
+function sessionToken() {
+  return state.session?.token ?? state.session?.Token ?? "";
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -67,13 +113,20 @@ function debounce(fn, delay) {
   };
 }
 
+function pick(source, camelName, pascalName, fallback = 0) {
+  return source?.[camelName] ?? source?.[pascalName] ?? fallback;
+}
+
 async function api(path, options = {}) {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(sessionToken() ? { Authorization: `Bearer ${sessionToken()}` } : {}),
+    ...(options.headers ?? {}),
+  };
+
   const response = await fetch(path, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers ?? {}),
-    },
     ...options,
+    headers,
   });
 
   let payload = null;
@@ -86,12 +139,175 @@ async function api(path, options = {}) {
     }
   }
 
+  if (response.status === 401 && !path.includes("/api/auth/login")) {
+    clearSession();
+    showLogin();
+  }
+
   if (!response.ok || payload?.success === false) {
     const message = payload?.message || `HTTP ${response.status}`;
     throw new Error(message);
   }
 
   return payload?.data ?? payload;
+}
+
+function showLogin() {
+  els.loginView.hidden = false;
+  els.appView.hidden = true;
+  els.loginError.hidden = true;
+  els.nombreUsuario.value = "";
+  els.rememberMe.checked = false;
+  els.password.value = "";
+  els.password.type = "password";
+  els.togglePasswordButton.setAttribute("aria-label", "Mostrar contrasena");
+  window.setTimeout(() => els.nombreUsuario.focus(), 0);
+}
+
+function showApp() {
+  els.loginView.hidden = true;
+  els.appView.hidden = false;
+  els.userName.textContent = pick(state.session, "nombreCompleto", "NombreCompleto", "Usuario");
+  els.userRole.textContent = pick(state.session, "rol", "Rol", "Sin rol");
+  navigateTo(state.currentRoute || "dashboard");
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  els.loginButton.disabled = true;
+  els.loginError.hidden = true;
+
+  try {
+    const session = await api("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        nombreUsuario: els.nombreUsuario.value.trim(),
+        password: els.password.value,
+      }),
+    });
+
+    saveSession(session);
+    window.localStorage.removeItem(REMEMBER_KEY);
+    state.currentRoute = "dashboard";
+    showApp();
+    showToast("Sesion iniciada.", "success");
+  } catch (error) {
+    els.loginError.textContent = error.message || "No se pudo iniciar sesion.";
+    els.loginError.hidden = false;
+  } finally {
+    els.loginButton.disabled = false;
+  }
+}
+
+function handleLogout() {
+  clearSession();
+  state.clientsLoaded = false;
+  state.dashboardLoaded = false;
+  closeDrawer();
+  showLogin();
+}
+
+function togglePasswordVisibility() {
+  const isPassword = els.password.type === "password";
+  els.password.type = isPassword ? "text" : "password";
+  els.togglePasswordButton.setAttribute("aria-label", isPassword ? "Ocultar contrasena" : "Mostrar contrasena");
+  els.password.focus();
+}
+
+function navigateTo(route) {
+  state.currentRoute = route;
+
+  els.dashboardSection.hidden = route !== "dashboard";
+  els.clientsSection.hidden = route !== "clientes";
+
+  els.navButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.route === route);
+  });
+
+  if (route === "dashboard") {
+    loadDashboard();
+  }
+
+  if (route === "clientes") {
+    prepareClients();
+  }
+}
+
+async function loadDashboard(force = false) {
+  if (state.dashboardLoaded && !force) {
+    return;
+  }
+
+  renderDashboardLoading();
+  els.dashboardRefreshButton.disabled = true;
+
+  try {
+    const summary = await api("/api/reportes/dashboard");
+    state.dashboardLoaded = true;
+    renderDashboard(summary);
+  } catch (error) {
+    state.dashboardLoaded = false;
+    els.dashboardGrid.innerHTML = `
+      <article class="metric-card red">
+        <p>Dashboard</p>
+        <strong>Error</strong>
+        <span></span>
+      </article>
+    `;
+    showToast(error.message || "No se pudo cargar el dashboard.", "error");
+  } finally {
+    els.dashboardRefreshButton.disabled = false;
+  }
+}
+
+function renderDashboardLoading() {
+  els.dashboardGrid.innerHTML = ["Clientes activos", "Vehiculos activos", "Citas pendientes", "Ordenes abiertas", "Balance pendiente", "Repuestos bajo stock"]
+    .map((label) => `
+      <article class="metric-card">
+        <p>${label}</p>
+        <strong>...</strong>
+        <span></span>
+      </article>
+    `)
+    .join("");
+}
+
+function renderDashboard(summary) {
+  const money = new Intl.NumberFormat("es-DO", {
+    style: "currency",
+    currency: "DOP",
+    maximumFractionDigits: 0,
+  });
+
+  const number = new Intl.NumberFormat("es-DO");
+  const metrics = [
+    ["Clientes activos", number.format(pick(summary, "clientesActivos", "ClientesActivos")), ""],
+    ["Vehiculos activos", number.format(pick(summary, "vehiculosActivos", "VehiculosActivos")), "teal"],
+    ["Citas pendientes", number.format(pick(summary, "citasPendientes", "CitasPendientes")), "amber"],
+    ["Ordenes abiertas", number.format(pick(summary, "ordenesAbiertas", "OrdenesAbiertas")), "green"],
+    ["Balance pendiente", money.format(pick(summary, "facturasPendientes", "FacturasPendientes")), "red"],
+    ["Repuestos bajo stock", number.format(pick(summary, "repuestosBajoStock", "RepuestosBajoStock")), "amber"],
+  ];
+
+  els.dashboardGrid.innerHTML = metrics
+    .map(([label, value, tone]) => `
+      <article class="metric-card ${tone}">
+        <p>${escapeHtml(label)}</p>
+        <strong>${escapeHtml(value)}</strong>
+        <span></span>
+      </article>
+    `)
+    .join("");
+}
+
+async function prepareClients() {
+  if (state.clientsLoaded) {
+    return;
+  }
+
+  await loadCatalogs();
+  await loadClients();
+  state.clientsLoaded = true;
 }
 
 async function loadCatalogs() {
@@ -108,8 +324,8 @@ async function loadCatalogs() {
 function renderTipoClienteOptions() {
   const options = state.tiposCliente.length
     ? state.tiposCliente.map((item) => {
-        const id = item.id ?? item.idTipoCliente;
-        const name = item.nombre ?? item.descripcion ?? `Tipo ${id}`;
+        const id = item.id ?? item.idTipoCliente ?? item.IdTipoCliente;
+        const name = item.nombre ?? item.descripcion ?? item.Description ?? `Tipo ${id}`;
         return `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`;
       })
     : [`<option value="1">Individual</option>`];
@@ -130,9 +346,9 @@ async function loadClients() {
     }
 
     const result = await api(`/api/clientes?${params}`);
-    state.clients = result.items ?? [];
-    state.totalItems = result.totalItems ?? 0;
-    state.totalPages = Math.max(result.totalPages ?? 1, 1);
+    state.clients = result.items ?? result.Items ?? [];
+    state.totalItems = result.totalItems ?? result.TotalItems ?? 0;
+    state.totalPages = Math.max(result.totalPages ?? result.TotalPages ?? 1, 1);
 
     renderClients();
   } catch (error) {
@@ -156,20 +372,24 @@ function renderClients() {
 }
 
 function renderClientRow(client) {
-  const email = client.correoElectronico || "Sin correo";
-  const actionButton = client.activo
-    ? `<button class="row-action danger" type="button" data-action="deactivate" data-id="${client.idCliente}" aria-label="Desactivar cliente">${icons.trash}</button>`
-    : `<button class="row-action" type="button" data-action="restore" data-id="${client.idCliente}" aria-label="Reactivar cliente">${icons.undo}</button>`;
+  const id = client.idCliente ?? client.IdCliente;
+  const name = client.nombreCompleto ?? client.NombreCompleto ?? "Sin nombre";
+  const phone = client.telefono ?? client.Telefono ?? "Sin telefono";
+  const email = client.correoElectronico ?? client.CorreoElectronico ?? "Sin correo";
+  const active = client.activo ?? client.Activo ?? true;
+  const actionButton = active
+    ? `<button class="row-action danger" type="button" data-action="deactivate" data-id="${id}" aria-label="Desactivar cliente">${icons.trash}</button>`
+    : `<button class="row-action" type="button" data-action="restore" data-id="${id}" aria-label="Reactivar cliente">${icons.undo}</button>`;
 
   return `
     <tr>
-      <td>${escapeHtml(client.nombreCompleto)}</td>
-      <td>${escapeHtml(client.telefono)}</td>
+      <td>${escapeHtml(name)}</td>
+      <td>${escapeHtml(phone)}</td>
       <td>${escapeHtml(email)}</td>
       <td>
         <div class="row-actions">
-          <button class="row-action" type="button" data-action="edit" data-id="${client.idCliente}" aria-label="Editar cliente">${icons.edit}</button>
-          <button class="row-action view" type="button" data-action="view" data-id="${client.idCliente}" aria-label="Ver cliente">${icons.view}</button>
+          <button class="row-action" type="button" data-action="edit" data-id="${id}" aria-label="Editar cliente">${icons.edit}</button>
+          <button class="row-action view" type="button" data-action="view" data-id="${id}" aria-label="Ver cliente">${icons.view}</button>
           ${actionButton}
         </div>
       </td>
@@ -233,17 +453,17 @@ function setFormReadOnly(isReadOnly) {
 }
 
 function fillForm(client) {
-  els.fields.clientId.value = client.idCliente;
-  els.fields.idTipoCliente.value = client.idTipoCliente;
-  els.fields.nombres.value = client.nombres ?? "";
-  els.fields.apellidos.value = client.apellidos ?? "";
-  els.fields.razonSocial.value = client.razonSocial ?? "";
-  els.fields.tipoDocumento.value = client.tipoDocumento ?? "CED";
-  els.fields.numeroDocumento.value = client.numeroDocumento ?? "";
-  els.fields.telefono.value = client.telefono ?? "";
-  els.fields.telefonoAlternativo.value = client.telefonoAlternativo ?? "";
-  els.fields.correoElectronico.value = client.correoElectronico ?? "";
-  els.fields.activo.checked = Boolean(client.activo);
+  els.fields.clientId.value = client.idCliente ?? client.IdCliente;
+  els.fields.idTipoCliente.value = client.idTipoCliente ?? client.IdTipoCliente;
+  els.fields.nombres.value = client.nombres ?? client.Nombres ?? "";
+  els.fields.apellidos.value = client.apellidos ?? client.Apellidos ?? "";
+  els.fields.razonSocial.value = client.razonSocial ?? client.RazonSocial ?? "";
+  els.fields.tipoDocumento.value = client.tipoDocumento ?? client.TipoDocumento ?? "CED";
+  els.fields.numeroDocumento.value = client.numeroDocumento ?? client.NumeroDocumento ?? "";
+  els.fields.telefono.value = client.telefono ?? client.Telefono ?? "";
+  els.fields.telefonoAlternativo.value = client.telefonoAlternativo ?? client.TelefonoAlternativo ?? "";
+  els.fields.correoElectronico.value = client.correoElectronico ?? client.CorreoElectronico ?? "";
+  els.fields.activo.checked = Boolean(client.activo ?? client.Activo);
 }
 
 function readCreatePayload() {
@@ -295,7 +515,8 @@ async function saveClient(event) {
         body: JSON.stringify(readCreatePayload()),
       });
       state.page = 1;
-      showToast(`Cliente ${created.idCliente} creado.`, "success");
+      state.dashboardLoaded = false;
+      showToast(`Cliente ${created.idCliente ?? created.IdCliente} creado.`, "success");
     }
 
     closeDrawer();
@@ -332,8 +553,8 @@ async function viewClient(id) {
 }
 
 async function deactivateClient(id) {
-  const client = state.clients.find((item) => item.idCliente === id);
-  const name = client?.nombreCompleto ?? `ID ${id}`;
+  const client = state.clients.find((item) => (item.idCliente ?? item.IdCliente) === id);
+  const name = client?.nombreCompleto ?? client?.NombreCompleto ?? `ID ${id}`;
   if (!window.confirm(`Desactivar cliente ${name}?`)) {
     return;
   }
@@ -341,6 +562,7 @@ async function deactivateClient(id) {
   setBusy(true);
   try {
     await api(`/api/clientes/${id}/desactivar`, { method: "PATCH" });
+    state.dashboardLoaded = false;
     showToast("Cliente desactivado.", "success");
     await loadClients();
   } catch (error) {
@@ -357,15 +579,16 @@ async function restoreClient(id) {
     await api(`/api/clientes/${id}`, {
       method: "PUT",
       body: JSON.stringify({
-        nombres: client.nombres,
-        apellidos: client.apellidos,
-        razonSocial: client.razonSocial,
-        telefono: client.telefono,
-        telefonoAlternativo: client.telefonoAlternativo,
-        correoElectronico: client.correoElectronico,
+        nombres: client.nombres ?? client.Nombres,
+        apellidos: client.apellidos ?? client.Apellidos,
+        razonSocial: client.razonSocial ?? client.RazonSocial,
+        telefono: client.telefono ?? client.Telefono,
+        telefonoAlternativo: client.telefonoAlternativo ?? client.TelefonoAlternativo,
+        correoElectronico: client.correoElectronico ?? client.CorreoElectronico,
         activo: true,
       }),
     });
+    state.dashboardLoaded = false;
     showToast("Cliente reactivado.", "success");
     await loadClients();
   } catch (error) {
@@ -384,6 +607,14 @@ function showToast(message, type = "success") {
     els.toast.hidden = true;
   }, 3600);
 }
+
+els.loginForm.addEventListener("submit", handleLogin);
+els.togglePasswordButton.addEventListener("click", togglePasswordVisibility);
+els.logoutButton.addEventListener("click", handleLogout);
+els.dashboardRefreshButton.addEventListener("click", () => loadDashboard(true));
+els.navButtons.forEach((button) => {
+  button.addEventListener("click", () => navigateTo(button.dataset.route));
+});
 
 els.newClientButton.addEventListener("click", () => openDrawer("create"));
 els.closeDrawerButton.addEventListener("click", closeDrawer);
@@ -443,5 +674,8 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-loadCatalogs();
-loadClients();
+if (sessionToken()) {
+  showApp();
+} else {
+  showLogin();
+}

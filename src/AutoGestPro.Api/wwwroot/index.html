@@ -3,75 +3,142 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AutoGestPro | Clientes</title>
+  <title>AutoGestPro</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <main class="presentation-stage">
-    <header class="module-heading">
-      <span class="step-badge">3</span>
-      <div>
-        <h1>CLIENTES</h1>
-        <p>Consulta, agrega o edita<br>la informacion de clientes.</p>
-      </div>
-    </header>
-
-    <section class="client-card" aria-label="Modulo de clientes">
-      <div class="card-header">
-        <h2>Clientes</h2>
+  <main class="login-view" id="loginView">
+    <section class="login-card" aria-label="Inicio de sesion">
+      <div class="login-brand">
+        <img class="login-logo" src="/assets/autogestpro-logo.png" alt="AutoGestPro">
+        <p>Taller Mecanico</p>
       </div>
 
-      <div class="card-toolbar">
-        <label class="search-box">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="11" cy="11" r="8"></circle>
-            <path d="m21 21-4.3-4.3"></path>
-          </svg>
-          <input id="searchInput" type="search" placeholder="Buscar cliente...">
+      <form id="loginForm" class="login-form">
+        <label>
+          Usuario
+          <input id="nombreUsuario" type="text" autocomplete="username" placeholder="Ingrese su usuario" required>
         </label>
+        <label>
+          Contrasena
+          <span class="password-field">
+            <input id="password" type="password" autocomplete="current-password" placeholder="Ingrese su contrasena" required>
+            <button class="password-toggle" id="togglePasswordButton" type="button" aria-label="Mostrar contrasena">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </span>
+        </label>
+        <div class="login-options" hidden>
+          <label class="remember-row">
+            <input id="rememberMe" type="checkbox" disabled>
+            <span>Recordarme</span>
+          </label>
+        </div>
+        <p class="form-error" id="loginError" hidden></p>
+        <button class="primary-button wide" id="loginButton" type="submit">Iniciar Sesion</button>
+        <a class="forgot-link" href="/swagger">Olvidaste tu contrasena?</a>
+      </form>
+    </section>
+  </main>
 
-        <button class="primary-button" id="newClientButton" type="button">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 5v14"></path>
-            <path d="M5 12h14"></path>
-          </svg>
-          Agregar Cliente
-        </button>
-      </div>
+  <main class="app-view" id="appView" hidden>
+    <section class="presentation-stage">
+      <header class="topbar">
+        <div class="topbar-brand">
+          <span class="brand-dot">AG</span>
+          <strong>AutoGestPro</strong>
+        </div>
+        <nav class="nav-tabs" aria-label="Modulos">
+          <button class="nav-tab active" type="button" data-route="dashboard">Dashboard</button>
+          <button class="nav-tab" type="button" data-route="clientes">Clientes</button>
+        </nav>
+        <div class="session-box">
+          <div>
+            <strong id="userName">Usuario</strong>
+            <span id="userRole">Rol</span>
+          </div>
+          <button class="secondary-button" id="logoutButton" type="button">Salir</button>
+        </div>
+      </header>
 
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Nombre</th>
-              <th>Telefono</th>
-              <th>Correo</th>
-              <th class="actions-column">Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="clientsBody"></tbody>
-        </table>
-      </div>
+      <div class="module-spacer" aria-hidden="true"></div>
 
-      <div class="empty-state" id="emptyState" hidden>
-        <strong>No hay clientes para mostrar</strong>
-      </div>
-
-      <footer class="table-footer">
-        <span id="pageInfo">Pagina 1 de 1</span>
-        <div class="pager">
-          <button class="icon-button" id="prevPageButton" type="button" aria-label="Pagina anterior">
+      <section class="dashboard-section" id="dashboardSection" aria-label="Dashboard">
+        <div class="section-actions">
+          <button class="secondary-button" id="dashboardRefreshButton" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m15 18-6-6 6-6"></path>
+              <path d="M21 12a9 9 0 0 1-15.4 6.4L3 16"></path>
+              <path d="M3 21v-5h5"></path>
+              <path d="M3 12A9 9 0 0 1 18.4 5.6L21 8"></path>
+              <path d="M21 3v5h-5"></path>
             </svg>
-          </button>
-          <button class="icon-button" id="nextPageButton" type="button" aria-label="Pagina siguiente">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m9 18 6-6-6-6"></path>
-            </svg>
+            Actualizar
           </button>
         </div>
-      </footer>
+
+        <div class="metric-grid" id="dashboardGrid"></div>
+      </section>
+
+      <section class="client-card" id="clientsSection" aria-label="Modulo de clientes" hidden>
+        <div class="card-header">
+          <h2>Clientes</h2>
+        </div>
+
+        <div class="card-toolbar">
+          <label class="search-box">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="8"></circle>
+              <path d="m21 21-4.3-4.3"></path>
+            </svg>
+            <input id="searchInput" type="search" placeholder="Buscar cliente...">
+          </label>
+
+          <button class="primary-button" id="newClientButton" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14"></path>
+              <path d="M5 12h14"></path>
+            </svg>
+            Agregar Cliente
+          </button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Telefono</th>
+                <th>Correo</th>
+                <th class="actions-column">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="clientsBody"></tbody>
+          </table>
+        </div>
+
+        <div class="empty-state" id="emptyState" hidden>
+          <strong>No hay clientes para mostrar</strong>
+        </div>
+
+        <footer class="table-footer">
+          <span id="pageInfo">Pagina 1 de 1</span>
+          <div class="pager">
+            <button class="icon-button" id="prevPageButton" type="button" aria-label="Pagina anterior">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m15 18-6-6 6-6"></path>
+              </svg>
+            </button>
+            <button class="icon-button" id="nextPageButton" type="button" aria-label="Pagina siguiente">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m9 18 6-6-6-6"></path>
+              </svg>
+            </button>
+          </div>
+        </footer>
+      </section>
     </section>
   </main>
 
@@ -142,9 +209,7 @@
 
       <footer class="drawer-actions">
         <button class="secondary-button" id="cancelButton" type="button">Cancelar</button>
-        <button class="primary-button" id="saveButton" type="submit">
-          Guardar
-        </button>
+        <button class="primary-button" id="saveButton" type="submit">Guardar</button>
       </footer>
     </form>
   </aside>
